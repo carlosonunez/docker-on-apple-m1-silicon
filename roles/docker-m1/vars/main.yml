@@ -1,0 +1,3 @@
+---
+vm_iso_url: https://cdimage.ubuntu.com/focal/daily-live/current/focal-desktop-arm64.iso
+vm_iso_local_fp: /tmp/live_cd.iso

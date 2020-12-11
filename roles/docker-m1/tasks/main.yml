@@ -1,0 +1,34 @@
+---
+# Thanks, Sven, for these amazing instructions!
+# https://finestructure.co/blog/2020/11/27/running-docker-on-apple-silicon-m1
+
+- name: Did we download the Live CD already?
+  stat:
+    path: "{{ vm_iso_local_fp }}"
+  register: live_cd_present
+
+- name: Download Live CD
+  get_url:
+    src: "{{ vm_iso_url }}"
+    dest: "{{ vm_iso_local_fp }}"
+  when: not live_cd_present.stat.exists
+
+- name: Create staging directory
+  file:
+    path: /Volumes/Ubuntu
+    state: directory
+
+- name: Attach the ISO to the staging directory
+  command: hdiutil attach -nomount "{{ vm_iso_local_fp }}"
+  register: attach_result
+
+- name: Get the device number
+  command: echo "{{ attach_result.stdout }}" | head -1 | cut -f1 -d ' '
+  register: device_number_result
+
+- set_fact:
+    device_number: "{{ device_number_result.stdout }}"
+
+- name: Mount the image locally
+  command: mount -t cd9660 "{{ device_number_result.stdout }}" /Volumes/Ubuntu
+

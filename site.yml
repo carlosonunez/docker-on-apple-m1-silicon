@@ -1,0 +1,8 @@
+---
+# These instructions were taken from Sven Schmidt's blog post
+# here: https://finestructure.co/blog/2020/11/27/running-docker-on-apple-silicon-m1
+- hosts: localhost
+  gather_facts: no
+  become: yes
+  roles:
+    - docker-m1
