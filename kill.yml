@@ -3,5 +3,7 @@
 # here: https://finestructure.co/blog/2020/11/27/running-docker-on-apple-silicon-m1
 - hosts: localhost
   gather_facts: no
-  roles:
-    - docker-m1
+  tasks:
+    - name: Stop the Docker VM
+      commands: sudo killall vftool
+

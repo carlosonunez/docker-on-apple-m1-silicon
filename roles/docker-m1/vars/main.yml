@@ -1,3 +1,8 @@
 ---
+stage_dir: "{{ lookup('env', 'HOME') }}/.docker_m1"
 vm_iso_url: https://cdimage.ubuntu.com/focal/daily-live/current/focal-desktop-arm64.iso
-vm_iso_local_fp: /tmp/live_cd.iso
+vm_iso_local_fp: "{{ stage_dir }}/live_cd.iso"
+vftool_url: https://github.com/evansm7/vftool.git
+vftool_dir: "{{ stage_dir }}/vftool"
+vftool_path: "{{ vftool_dir }}/build/vftool"
+session_name: 'docker'

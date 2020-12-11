@@ -1,34 +1,177 @@
 ---
 # Thanks, Sven, for these amazing instructions!
 # https://finestructure.co/blog/2020/11/27/running-docker-on-apple-silicon-m1
+- name: Remove stale Docker contexts
+  command: sudo sh -c "docker context use default && { docker context rm -f docker-arm64 || true; }"
 
-- name: Did we download the Live CD already?
-  stat:
-    path: "{{ vm_iso_local_fp }}"
-  register: live_cd_present
+- name: Check for XCode Command Line Tools
+  command: which xcodebuild
+  register: xcode_cli_tools_result
 
-- name: Download Live CD
-  get_url:
-    src: "{{ vm_iso_url }}"
-    dest: "{{ vm_iso_local_fp }}"
-  when: not live_cd_present.stat.exists
+- fail:
+    msg: >-
+      You don't have the XCode Command Line Tools installed.
+      Run this to install them --- 'xcode-select --install'
+  when: xcode_cli_tools_result.rc != 0
 
-- name: Create staging directory
+- name: Enable Command Line Tools
+  command: sudo xcode-select --switch /Library/Developer/CommandLineTools
+  
+- name: Create mount directory
   file:
     path: /Volumes/Ubuntu
     state: directory
 
+- name: Create staging directory
+  file:
+    path: "{{ stage_dir }}"
+    state: directory
+
+- name: Are we mounted?
+  command: sh -c "/sbin/mount | grep -q Ubuntu"
+  ignore_errors: true
+  register: mounted_result
+
+- set_fact:
+    mounted: "{{ mounted_result.rc == 0 }}"
+
+- name: Did we download the Live CD already?
+  command: test -e "{{ vm_iso_local_fp }}"
+  ignore_errors: true
+  register: live_cd_present
+
+- name: Did we download and compile vftool already?
+  command: test -e "{{ vftool_path }}"
+  ignore_errors: true
+  register: vftool_present
+
+- name: Download Live CD
+  get_url:
+    url: "{{ vm_iso_url }}"
+    dest: "{{ vm_iso_local_fp }}"
+  when: not mounted and live_cd_present.rc != 0
+
+- name: Download vftool
+  git:
+    repo: "{{ vftool_url }}"
+    dest: "{{ vftool_dir }}"
+  when: vftool_present.rc != 0
+
+- name: Force vftool to build as ARM64 executable
+  command: sh -c "sed -i '' 's/^CFLAGS.*/CFLAGS= -O3 -arch arm64/' {{ vftool_dir }}/Makefile"
+
+- name: Compile vftool
+  command: sh -c "cd {{ vftool_dir }} && make"
+
 - name: Attach the ISO to the staging directory
   command: hdiutil attach -nomount "{{ vm_iso_local_fp }}"
   register: attach_result
-
-- name: Get the device number
-  command: echo "{{ attach_result.stdout }}" | head -1 | cut -f1 -d ' '
-  register: device_number_result
+  when: not mounted
 
 - set_fact:
-    device_number: "{{ device_number_result.stdout }}"
+    device_number: "{{ attach_result.stdout_lines[0].split(' ')[0] }}"
+  when: not mounted
 
 - name: Mount the image locally
-  command: mount -t cd9660 "{{ device_number_result.stdout }}" /Volumes/Ubuntu
+  command: /sbin/mount -t cd9660 "{{ device_number }}" /Volumes/Ubuntu
+  when: not mounted
 
+- name: Get kernel image
+  copy:
+    src: "/Volumes/Ubuntu/casper/{{ item.name }}"
+    dest: "{{ stage_dir }}/{{ item.path }}"
+  with_items:
+    - name: vmlinuz
+      path: vmlinuz.gz
+    - name: initrd
+      path: initrd
+
+- name: Unzip kernel
+  command: sh -c "cd "{{ stage_dir }}" && { test -e vmlinuz || gunzip {{ stage_dir }}/vmlinuz.gz; }"
+
+- name: Start the VM daemonized
+  command: "sudo sh -c '( ( nohup {{ vftool_path }} -k {{ stage_dir }}/vmlinuz -i {{ stage_dir }}/initrd -c {{ vm_iso_local_fp }} -m 4096 -a console=hvc0 &>{{ stage_dir }}/vm.log ) & )'"
+
+- name: Wait for a fd to become available
+  command: "sh -c 'grep \"Waiting for connection to\" {{ stage_dir }}/vm.log'"
+  register: tty_result
+  until: tty_result.rc == 0
+  retries: 5
+  delay: 1
+
+- name: Get the TTY for the VM
+  command: "sh -c 'grep \"Waiting for connection to\" {{ stage_dir }}/vm.log | sed \"s#.*/dev#/dev#\"'"
+  register: tty_result
+
+- debug:
+    msg: "found: {{ tty_result.stdout }}"
+
+- set_fact:
+    tty: "{{ tty_result.stdout }}"
+
+- name: Create a new screen session
+  command: "sh -c '( ( cd {{ stage_dir }} && nohup screen -dmS {{ session_name }} -L - {{ tty }}; sleep 1 &>screenlog.0 ) & )'"
+  
+- name: Verify that a session was created
+  command: "sudo sh -c 'screen -ls | grep {{ session_name }}'"
+  register: result
+  until: result.rc == 0
+  retries: 3
+  delay: 1
+
+- name: Wait for Ubuntu login
+  command: "sudo sh -c 'grep \"login:\" {{ stage_dir }}/screenlog.0 | awk \"{print $NF}\"'"
+  register: tty_result
+  until: '"login:" in tty_result.stdout'
+  retries: 30
+  delay: 1
+
+- name: Login
+  command: "sudo sh -c 'screen -S {{ session_name }} -p 0 -X stuff $(printf \"ubuntu\\r\\n\")'"
+
+- name: Wait for prompt
+  command: "sudo sh -c 'grep \"ubuntu@ubuntu:\" {{ stage_dir }}/screenlog.0'"
+  register: tty_result
+  until: tty_result.rc == 0
+  retries: 30
+  delay: 1
+
+- copy:
+    src: provision.sh
+    dest: "{{ stage_dir }}/provision.sh"
+
+- name: Provision the machine
+  command: "sudo sh {{ stage_dir }}/provision.sh {{ session_name }}"
+
+- name: Get IP address
+  command: sh -c "grep 'inet 192.168' {{ stage_dir }}/screenlog.0 | awk '{print $2}'"
+  register: ip_address_result
+  until: ip_address_result.rc == 0 and ip_address_result.stdout != ""
+  retries: 60
+  delay: 1
+
+- set_fact:
+    ip_address: "{{ ip_address_result.stdout }}"
+
+- debug:
+    msg: "stdout -> {{ ip_address_result.stdout }}, address -> {{ ip_address }}"
+
+- name: Create a Docker context for this VM
+  command: docker context create docker-arm64 --docker "host=ssh://ubuntu@{{ ip_address }}"
+
+- name: Set the context to default
+  command: docker context use docker-arm64
+
+- name: Give user rwx permissions to stage dir
+  become: yes
+  file:
+    path: "{{ stage_dir }}"
+    mode: 0755
+    owner: "{{ lookup('env', 'USER') }}"
+    recurse: yes
+
+- debug:
+    msg: >-
+      "Docker is ready to use! To kill the underlying VM, simply run 'ansible-playbook kill.yml'.
+      If you need to access the underlying VM, you can do so by either SSH-ing into it
+      'ssh ubuntu@{{ ip_address }}' or running screen 'sudo screen -r {{ session_name }}'
