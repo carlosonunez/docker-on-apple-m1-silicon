@@ -17,3 +17,7 @@ Run Docker on your ultra-fast M1-powered Mac until Docker releases a more offici
   about two minutes to complete.
 - You'll only be able to run `arm64` Docker images, as cross-platform virtualization is not
   supported yet.
+
+## Credits
+
+- Thanks, Sven! Original post [here](https://finestructure.co/blog/2020/11/27/running-docker-on-apple-silicon-m1)
