@@ -6,7 +6,7 @@ Run Docker on your ultra-fast M1-powered Mac until Docker releases a more offici
 
 **NOTE**: This should work on `arm` or `x86` shells.
 
-1. Clone this repo: `git clone https://github.com/carlosonunez/docker-m1-helper`
+1. Clone this repo: `git clone https://github.com/carlosonunez/docker-on-apple-m1-silicon`
 2. Download Ansible: `brew install ansible`
 3. Run this playbook: `cd docker-m1-helper && ansible-playbook site.yml`
 4. Confirm that everything is working: `docker run hello-world`
