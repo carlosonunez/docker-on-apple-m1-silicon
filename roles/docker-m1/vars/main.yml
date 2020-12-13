@@ -9,3 +9,4 @@ session_name: 'docker'
 ssh_key_path: "{{ lookup('env', 'HOME') }}/.ssh/docker_m1"
 ssh_key_pubkey_path: "{{ ssh_key_path }}.pub"
 docker_data_path: "{{ stage_dir }}/data.img"
+docker_userdata_path: "{{ stage_dir }}/userdata.img"

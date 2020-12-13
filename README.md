@@ -1,4 +1,4 @@
-# docker-m1-hack
+# docker-on-apple-m1-silicon
 
 Run Docker on your ultra-fast M1-powered Mac until Docker releases a more official solution.
 
@@ -10,6 +10,27 @@ Run Docker on your ultra-fast M1-powered Mac until Docker releases a more offici
 2. Download Ansible: `brew install ansible`
 3. Run this playbook: `cd docker-m1-helper && ansible-playbook site.yml`
 4. Confirm that everything is working: `docker run hello-world`
+
+## What does this do?
+
+This playbook will:
+
+- Create an ARM-based VM using Apple's Virtualization Framework built into Big Sur (via `vftool`),
+- Provisions a 4GB image for Docker metadata and an 8GB image for your workspace
+  (which will be mounted at /Users/$USER so that you don't have to change your existing
+  scripts or Docker Compose files), and
+- Installs Docker onto the VM and creates a context for your client to find it
+
+## Troubleshooting
+
+- It can take a few minutes for the data images to provision themselves. This only happens
+the first time you run this playbook.
+- If the VM shuts down (from sleep or a restart), just run this playbook again to re-provision it. It takes 30-60 seconds to
+complete with a good network connection.
+- If you need to start fresh, `sudo rm ~/.docker_m1` and run this playbook again.
+- If you need to enter the VM for debugging, you can:
+    - SSH into it: `ssh ubuntu@$ip_address`, or
+    - `screen` into it: `sudo screen -r docker`
 
 ## Caveats
 

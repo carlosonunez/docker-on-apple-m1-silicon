@@ -63,14 +63,23 @@
   ignore_errors: true
   register: ssh_key_present
 
-- name: Did we already create a data volume?
+- name: Did we already create the Docker data volume?
   command: test -e "{{ docker_data_path }}"
   ignore_errors: true
   register: docker_data_path_present
 
-- name: Create 8GB Docker data volume (this will take about a minute)
+- name: Did we already create the Docker user data volume?
+  command: test -e "{{ docker_userdata_path }}"
+  ignore_errors: true
+  register: docker_userdata_path_present
+
+- name: Create 4GB Docker data volume (this will take about a minute)
   command: "dd if=/dev/zero of={{ docker_data_path }} bs=1024 count=8000000"
   when: docker_data_path_present.rc != 0
+
+- name: Create 8GB Docker user-data volumes (this will take about a minute)
+  command: "dd if=/dev/zero of={{ docker_userdata_path }} bs=1024 count=8000000"
+  when: docker_userdata_path_present.rc != 0
 
 - name: Create a SSH keypair for this host
   command: ssh-keygen -t rsa -f "{{ ssh_key_path }}" -q -N ""
@@ -131,7 +140,7 @@
   command: sh -c "cd "{{ stage_dir }}" && { test -e vmlinuz || gunzip {{ stage_dir }}/vmlinuz.gz; }"
 
 - name: Start the VM daemonized
-  command: "sudo sh -c '( ( nohup {{ vftool_path }} -k {{ stage_dir }}/vmlinuz -i {{ stage_dir }}/initrd -c {{ vm_iso_local_fp }} -d {{ docker_data_path }} -m 4096 -a console=hvc0 &>{{ stage_dir }}/vm.log ) & )'"
+  command: "sudo sh -c '( ( nohup {{ vftool_path }} -k {{ stage_dir }}/vmlinuz -i {{ stage_dir }}/initrd -c {{ vm_iso_local_fp }} -d {{ docker_data_path }} -d {{ docker_userdata_path }} -m 4096 -a console=hvc0 &>{{ stage_dir }}/vm.log ) & )'"
 
 - name: Wait for a fd to become available
   command: "sh -c 'grep \"Waiting for connection to\" {{ stage_dir }}/vm.log'"
@@ -178,9 +187,17 @@
   delay: 1
 
 - name: Provision the file system on the Docker data dir
-  command: "{{ stage_dir }}/data_provision.sh {{ session_name }}"
-  when: docker_data_path_present.rc != 0
+  command: "{{ stage_dir }}/data_provision.sh {{ session_name }} {{ lookup('env', 'HOME') }}"
+  when: docker_data_path_present.rc != 0 and docker_userdata_path_present.rc != 0
   delay: 3
+
+- name: Wait for data provision to finish
+  when: docker_data_path_present.rc != 0 and docker_userdata_path_present.rc != 0
+  command: sh -c "grep 'data provision finished' {{ stage_dir }}/screenlog.0"
+  register: data_provision_result
+  until: data_provision_result.rc == 0 and data_provision_result.stdout != ""
+  retries: 15
+  delay: 1
 
 - name: Provision the machine
   command: "{{ stage_dir }}/provision.sh {{ session_name }} {{ ssh_key_pubkey_path }}"
