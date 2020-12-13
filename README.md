@@ -45,22 +45,8 @@ Because this method connects your Docker client to a remote Docker engine, you w
 to mount volumes like you normally did with Docker for Mac. Instead, you'll have to `rsync`
 your files between your computer and the VM running Docker.
 
-Here's how you can do that:
-
-1. Create the directory in your Docker VM and `rsync`:
-
-   ```sh
-   ssh ubuntu@$ip_address "sudo mkdir -p '$PWD' && sudo chown -R ubuntu '$PWD'"
-   rsync -avh --progress $PWD/* ubuntu@$ip_address:$PWD
-   ```
-
-2. Make your changes and run your Docker commands/Docker Compose services.
-3. `rsync` those changes back:
-
-   ```sh
-   rsync -avh --progress --update ubuntu@$ip_address/ $PWD
-   ```
-
+Consider aliasing `docker` and `docker-compose` to `docker_hack.sh` and `docker_compose_hack.sh`
+(included here) which can handle this transparently for you.
 
 ## Credits
 

@@ -5,5 +5,5 @@
   gather_facts: no
   tasks:
     - name: Stop the Docker VM
-      commands: sudo killall vftool
+      command: sudo killall vftool
 
