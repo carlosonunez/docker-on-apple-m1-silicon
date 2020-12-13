@@ -6,3 +6,6 @@ vftool_url: https://github.com/evansm7/vftool.git
 vftool_dir: "{{ stage_dir }}/vftool"
 vftool_path: "{{ vftool_dir }}/build/vftool"
 session_name: 'docker'
+ssh_key_path: "{{ lookup('env', 'HOME') }}/.ssh/docker_m1"
+ssh_key_pubkey_path: "{{ ssh_key_path }}.pub"
+docker_data_path: "{{ stage_dir }}/data.img"

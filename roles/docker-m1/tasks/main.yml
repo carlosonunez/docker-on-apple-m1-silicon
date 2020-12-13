@@ -1,8 +1,11 @@
 ---
 # Thanks, Sven, for these amazing instructions!
 # https://finestructure.co/blog/2020/11/27/running-docker-on-apple-silicon-m1
+
+# This can take over a minute to to complete if 'docker context rm' is used if the
+# underlying VM was deleted before this playbook was run.
 - name: Remove stale Docker contexts
-  command: sudo sh -c "docker context use default && { docker context rm -f docker-arm64 || true; }"
+  command: sh -c "grep -r 'docker-arm64' ~/.docker/contexts | cut -f1 -d ':' | xargs rm -f && sed -i '' 's/docker-arm64/default/' ~/.docker/config.json"
 
 - name: Check for XCode Command Line Tools
   command: which xcodebuild
@@ -27,6 +30,16 @@
     path: "{{ stage_dir }}"
     state: directory
 
+- name: Copy provisioning scripts
+  copy:
+    src: "{{ item }}"
+    dest: "{{ stage_dir }}/{{ item }}"
+    mode: 0755
+  with_items:
+    - provision.sh
+    - data_provision.sh
+    - add_private_key.sh
+
 - name: Are we mounted?
   command: sh -c "/sbin/mount | grep -q Ubuntu"
   ignore_errors: true
@@ -44,6 +57,34 @@
   command: test -e "{{ vftool_path }}"
   ignore_errors: true
   register: vftool_present
+
+- name: Did we already create a keypair?
+  command: test -e "{{ ssh_key_pubkey_path }}"
+  ignore_errors: true
+  register: ssh_key_present
+
+- name: Did we already create a data volume?
+  command: test -e "{{ docker_data_path }}"
+  ignore_errors: true
+  register: docker_data_path_present
+
+- name: Create 8GB Docker data volume (this will take about a minute)
+  command: "dd if=/dev/zero of={{ docker_data_path }} bs=1024 count=8000000"
+  when: docker_data_path_present.rc != 0
+
+- name: Create a SSH keypair for this host
+  command: ssh-keygen -t rsa -f "{{ ssh_key_path }}" -q -N ""
+  when: ssh_key_present.rc != 0
+
+- name: Permission the key
+  when: ssh_key_present.rc != 0
+  file:
+    path: "{{ ssh_key_path }}"
+    mode: 0600
+
+- name: Save the public key as a variable
+  set_fact:
+    pubkey: "{{ lookup('file', ssh_key_pubkey_path) }}"
 
 - name: Download Live CD
   get_url:
@@ -90,7 +131,7 @@
   command: sh -c "cd "{{ stage_dir }}" && { test -e vmlinuz || gunzip {{ stage_dir }}/vmlinuz.gz; }"
 
 - name: Start the VM daemonized
-  command: "sudo sh -c '( ( nohup {{ vftool_path }} -k {{ stage_dir }}/vmlinuz -i {{ stage_dir }}/initrd -c {{ vm_iso_local_fp }} -m 4096 -a console=hvc0 &>{{ stage_dir }}/vm.log ) & )'"
+  command: "sudo sh -c '( ( nohup {{ vftool_path }} -k {{ stage_dir }}/vmlinuz -i {{ stage_dir }}/initrd -c {{ vm_iso_local_fp }} -d {{ docker_data_path }} -m 4096 -a console=hvc0 &>{{ stage_dir }}/vm.log ) & )'"
 
 - name: Wait for a fd to become available
   command: "sh -c 'grep \"Waiting for connection to\" {{ stage_dir }}/vm.log'"
@@ -136,12 +177,13 @@
   retries: 30
   delay: 1
 
-- copy:
-    src: provision.sh
-    dest: "{{ stage_dir }}/provision.sh"
+- name: Provision the file system on the Docker data dir
+  command: "{{ stage_dir }}/data_provision.sh {{ session_name }}"
+  when: docker_data_path_present.rc != 0
+  delay: 3
 
 - name: Provision the machine
-  command: "sudo sh {{ stage_dir }}/provision.sh {{ session_name }}"
+  command: "{{ stage_dir }}/provision.sh {{ session_name }} {{ ssh_key_pubkey_path }}"
 
 - name: Get IP address
   command: sh -c "grep 'inet 192.168' {{ stage_dir }}/screenlog.0 | awk '{print $2}'"
@@ -149,6 +191,9 @@
   until: ip_address_result.rc == 0 and ip_address_result.stdout != ""
   retries: 60
   delay: 1
+
+- name: Add our private key
+  command: "{{ stage_dir }}/add_private_key.sh {{ session_name }} {{ ssh_key_pubkey_path }}"
 
 - set_fact:
     ip_address: "{{ ip_address_result.stdout }}"
@@ -163,10 +208,23 @@
   command: docker context use docker-arm64
 
 - name: Give user rwx permissions to stage dir
-  become: yes
   file:
     path: "{{ stage_dir }}"
     mode: 0755
+    owner: "{{ lookup('env', 'USER') }}"
+    recurse: yes
+
+- name: Give user rwx permissions to key
+  file:
+    path: "{{ ssh_key_pubkey_path }}"
+    owner: "{{ lookup('env', 'USER') }}"
+  with_items:
+    - "{{ ssh_key_pubkey_path }}"
+    - "{{ ssh_key_path }}"
+
+- name: Give user rw permissions to Docker directory
+  file:
+    path: "{{ lookup('env', 'USER') }}/.docker"
     owner: "{{ lookup('env', 'USER') }}"
     recurse: yes
 
