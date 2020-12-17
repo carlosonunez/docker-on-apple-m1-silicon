@@ -1,6 +1,6 @@
 # docker-on-apple-m1-silicon
 
-## Deprecation Notice
+## ⚠️ ⚠️ ⚠️  Deprecation Notice ⚠️ ⚠️ ⚠️  
 
 Docker did it! They've released a beta version of Docker for Mac. It supports
 ARM and (with a performance penalty) x86-64 images. Please use that instead!
