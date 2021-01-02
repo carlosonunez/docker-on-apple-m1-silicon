@@ -5,6 +5,8 @@
 Docker did it! They've released a beta version of Docker for Mac. It supports
 ARM and (with a performance penalty) x86-64 images. Please use that instead!
 
+Learn more [here](https://www.docker.com/blog/download-and-try-the-tech-preview-of-docker-desktop-for-m1/).
+
 ---
 
 Run Docker on your ultra-fast M1-powered Mac until Docker releases a more official solution.
